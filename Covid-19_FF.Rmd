@@ -1,0 +1,711 @@
+---
+title: "<center> <h1> **Shinyapp to monitor Covid-19 <br> Cases, Deaths, Recoveries and Vaccinations** </h1> </center>"
+date:
+output: 
+  html_document:
+runtime: shiny
+editor_options: 
+  chunk_output_type: console
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: mediumblue;
+}
+
+
+
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: DarkBlue;
+}
+h2 { /* Header 2 */
+    font-size: 28px;
+  color: Red;
+}
+h3 { /* Header 3 */
+  font-size: 18px;
+  font-family: "Times New Roman", Times, serif;
+  color: DarkBlue;
+}
+
+</style>
+
+
+```{r echo=F, message=F, warning=F}
+#install.packages("devtools")
+#devtools::install_github("RamiKrispin/coronavirus", force = TRUE)
+library(lubridate)
+library(tidyverse)
+library(readr)
+library(plotly)
+urlfile="https://raw.githubusercontent.com/RamiKrispin/coronavirus/master/csv/coronavirus.csv"
+coronavirus <- read_csv(url(urlfile))
+
+```
+
+### The data pertaining to cases, death and recoveries is pooled from [**Johns Hopkins University Center for Systems Science and Engineering (JHU CCSE)**](https://github.com/RamiKrispin/coronavirus). Vaccination data is pooled from [**Our world in data**](https://github.com/owid/covid-19-data/blob/master/public/data/vaccinations/README.md). Information about the app can be found on [**Statistics & R**](https://firasfneish-statistics-r.netlify.app/). 
+
+### **Both sources update the data sets on a daily basis and the app pools data automatically.**
+
+# **Daily summary of Covid-19 cases, recoveries and deaths** {.tabset}
+
+
+```{r echo=F}
+#renderTable(coronavirus[c(1:5), ] )
+
+coronavirus <- coronavirus %>% mutate(month=as.factor(month(as.POSIXlt(coronavirus$date, format="%Y/%m/%d"))),
+                                      year=as.factor(format(as.Date(coronavirus$date, format="%d/%m/%Y"),"%Y"))
+)
+
+
+countries_list <- c(levels(as.factor(coronavirus$country)))
+
+Months <- c(levels(coronavirus$month))
+
+years <- c(levels(coronavirus$year))
+
+
+```
+
+
+
+## **Since the pandemic started**
+
+Summing up the all cases depending on the dates chosen.
+```{r, echo=F}
+
+inputPanel(
+selectInput(inputId = "Ctr_Pandemic_start", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = c("Germany", "France"), multiple = T   ),
+
+
+dateRangeInput('dateRange_start_pandemic',
+      label = 'Date range:',
+      start = max(coronavirus$date, na.rm = T)-10, end = max(coronavirus$date, na.rm = T))
+
+
+)
+
+
+
+dat_overall_seit_pandemic_start <- reactive(
+coronavirus %>% filter(  (country %in% c(input$Ctr_Pandemic_start)) &
+                         (date>=input$dateRange_start_pandemic[1] & date<=input$dateRange_start_pandemic[2])
+                        ) %>% group_by(country, type) %>% summarise(confirmed=sum(cases), death=sum(cases),   recovered=sum(cases)) %>% rename(overall_numbers=confirmed)  
+)
+
+
+renderPlot(
+  
+  dat_overall_seit_pandemic_start() %>% ggplot(aes(country, overall_numbers, fill=type, label=overall_numbers))+
+    geom_bar(stat = "identity", position = "dodge")+
+  geom_text(aes(label =overall_numbers , vjust=-0.5), position = position_dodge(width=0.9))+
+    theme(axis.text.x = element_text(face = "bold", size = 18))+ ylab("Number of cases")+ 
+    labs(fill = "Type")
+  
+  
+  )
+
+```
+
+
+
+
+## **Countries** 
+
+Showing the trend of the cases based on the dates chosen.
+```{r echo=FALSE, eval=T}
+inputPanel(
+selectInput(inputId = "Ctr_", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = "Germany", multiple = T   ),
+
+
+
+ # checkboxGroupInput("month_sel", "Month",
+ #                    choiceNames=Months, 
+ #                    choiceValues = Months)
+ 
+ 
+  checkboxGroupInput("type_dat_", "Type",
+                    choiceNames=c("Confirmed", "Death", "Recovered"), 
+                    choiceValues = c("confirmed", "death", "recovered"), 
+                    selected =  c("confirmed", "death", "recovered")),
+  
+
+# selectInput(inputId = "years", 
+#                         label = "Year",
+#                         choices = years, selected = "2020"   ),
+
+  # sliderInput("obs", "Months:",
+  #   min = 1, max = 12, value = c(1,12)
+  # )
+#numericInput("obss", "Month", 5, min = 1, max = 12),
+
+dateRangeInput('dateRange',
+      label = 'Date range:',
+      start = max(coronavirus$date- 10, na.rm = T), end = max(coronavirus$date, na.rm = T)
+    )
+
+ # sliderInput("slider2", label = "Cases:", min = 0, 
+ #        max = max(coronavirus$cases, na.rm = T), 
+ #        value = c(min(coronavirus$cases, na.rm = T),       max(coronavirus$cases, na.rm = T)))
+
+#renderPrint(input$obs)
+ #renderPrint(input$obss)
+)
+dat_Month <- reactive(
+  
+ coronavirus %>%   filter(   (country %in% c(input$Ctr_)) & (date>=input$dateRange[1] & date<=input$dateRange[2]) & (type %in% input$type_dat_) )%>% group_by(date, type, country) %>% summarise(cases=sum(cases),  #month=unique(month), 
+                                                                                                 type=unique(type), country=unique(country)) 
+   
+  
+)
+#str(coronavirus$date)
+
+
+
+#renderPrint(dat_Month())
+ renderPlotly({
+   # validate(
+   #      need(input$obss, "")
+   #    )
+   validate(
+         need(input$type_dat_, "")
+       )
+     
+dat_Month() %>%  ggplot(aes(date, cases, color=type, shape=country))+geom_point()+ geom_line()+
+  theme_bw()+
+  facet_wrap(~type, scales = "free", nrow = 2, labeller = labeller(
+        type = c("confirmed" = "Confirmed", "death"="Death", "recovered"="Recovered")) )+
+  #theme(legend.position = "none")+
+     # theme(axis.text.x = element_text(size = 12, face="bold"), 
+     #                            axis.text.y = element_text(size = 12, face="bold"))+
+     xlab("Month")+ ylab("Cases")+guides(color=FALSE)
+   
+   })
+
+
+
+```
+
+
+
+##
+
+# **Most recent data**{.tabset}
+## **Confirmed new cases** 
+
+
+```{r echo=FALSE}
+
+inputPanel(
+selectInput(inputId = "Ctr_bar", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = c("Germany", "England", "Austria"), multiple = T   )
+
+)
+
+
+
+table_inci <- reactive(
+  
+ coronavirus %>% filter(country %in% c(input$Ctr_bar)) %>% group_by(country) %>%  filter(date==max(date)) %>% select(country, date,type, cases) %>%  group_by(date, type, country) %>% summarise(cases=sum(cases)) %>%  mutate(date=as.character(date))
+   
+)
+
+
+#renderPrint(table_inci())
+
+renderPlotly({
+  
+table_inci() %>% filter(type %in% c("confirmed")) %>% ggplot(aes(reorder(country, cases), cases, fill=country))+
+   geom_bar(stat = "identity")+#coord_flip()+
+  theme(legend.position = "none")+
+ geom_text(aes( label = paste(cases, date, sep=", updated on ")),  vjust = 0, hjust=0.1, size=3)+ xlab("")+facet_wrap(~type)+ coord_flip()
+
+})
+
+```
+
+```{r echo=F, message=F}
+
+new_confirmed_latest_data_world <- coronavirus  %>% group_by(country) %>%  filter(date==max(date)) %>% select(country, date,type, cases) %>%  group_by(date, type, country) %>% summarise(cases=sum(cases)) %>%  mutate(date=as.character(date)) %>% filter(type %in% c("confirmed")) %>%  filter(cases==max(cases)) 
+
+
+```
+### On **`r new_confirmed_latest_data_world$date`**, **`r new_confirmed_latest_data_world$country`** had the highest number of new confirmed cases of Covid-19 in the world.
+
+
+
+## **Recovered**
+```{r echo=FALSE, eval=T}
+
+inputPanel(
+selectInput(inputId = "Ctr_bar_rec", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = c("Germany",  "Brazil","Israel"), multiple = T   )
+
+)
+
+
+table_inci_rec <- reactive(
+  
+ coronavirus %>% filter(country %in% c(input$Ctr_bar_rec)) %>% group_by(country) %>%  filter(date==max(date)) %>% select(country, date,type, cases) %>%  group_by(date, type, country) %>% summarise(cases=sum(cases)) %>%  mutate(date=as.character(date))
+   
+)
+
+
+renderPlotly({
+  
+table_inci_rec() %>% filter(type %in% c("recovered")) %>% ggplot(aes(reorder(country, cases), cases, fill=country))+
+   geom_bar(stat = "identity")+#coord_flip()+
+  theme(legend.position = "none")+
+ geom_text(aes( label = paste(cases, date, sep=", updated on ")),  vjust = 0, hjust=0.1, size=3)+ xlab("")+facet_wrap(~type)+ coord_flip()
+
+})
+
+
+```
+
+```{r echo=F, message=F}
+
+recoverd_latest_data_world <- coronavirus  %>% group_by(country) %>%  filter(date==max(date)) %>% select(country, date,type, cases) %>%  group_by(date, type, country) %>% summarise(cases=sum(cases)) %>%  mutate(date=as.character(date)) %>% filter(type %in% c("recovered")) %>%  filter(cases==max(cases)) 
+
+
+```
+### On **`r recoverd_latest_data_world$date`**, **`r recoverd_latest_data_world$country`** had the highest number of Covid-19 recoveries in the world.
+
+
+## **Deaths**
+```{r echo=FALSE, eval=T}
+
+inputPanel(
+selectInput(inputId = "Ctr_bar_death", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = c("Germany", "France", "US"), multiple = T   )
+
+)
+
+
+table_inci_death <- reactive(
+  
+ coronavirus %>% filter(country %in% c(input$Ctr_bar_death)) %>% group_by(country) %>%  filter(date==max(date)) %>% select(country, date,type, cases) %>%  group_by(date, type, country) %>% summarise(cases=sum(cases)) %>%  mutate(date=as.character(date))
+   
+)
+
+
+renderPlotly({
+  
+table_inci_death() %>% filter(type %in% c("death")) %>% ggplot(aes(reorder(country, cases), cases, fill=country))+
+   geom_bar(stat = "identity")+#coord_flip()+
+  theme(legend.position = "none")+
+ geom_text(aes( label = paste(cases, date, sep=", updated on ")),  vjust = 0, hjust=0.1, size=3)+ xlab("")+facet_wrap(~type)+ coord_flip()
+
+})
+
+
+```
+
+```{r echo=F, message=F}
+
+death_latest_data_world <- coronavirus  %>% group_by(country) %>%  filter(date==max(date)) %>% select(country, date,type, cases) %>%  group_by(date, type, country) %>% summarise(cases=sum(cases)) %>%  mutate(date=as.character(date)) %>% filter(type %in% c("death")) %>%  filter(cases==max(cases)) 
+
+
+```
+### On **`r death_latest_data_world$date`**, **`r death_latest_data_world$country`** had the highest number of Covid-19 deaths in the world.
+
+```{r setup, echo=F, message=F}
+library(magrittr)
+library(tidyverse)
+library(plotly)
+library(shiny)
+library(data.table)
+library(directlabels)
+library(ggrepel)
+
+library(rworldmap)
+
+#library(tidyverse)
+theme_set(theme_bw())
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+library(rgeos)
+
+joinCountryData2Map_perso <- function (dF, joinCode = "ISO3", nameJoinColumn = "ISO3V10", 
+  nameCountryColumn = "Country", suggestForFailedCodes = FALSE, 
+  mapResolution = "coarse", projection = NA, verbose = FALSE) 
+{
+  mapWithData <- getMap(resolution = mapResolution)
+  if (!is.na(projection)) 
+    warning("the projection argument has been deprecated, returning Lat Lon, use spTransform from package rgdal as shown in help details or the FAQ")
+  listJoinCodesNew <- c("ISO_A2", "ISO_A3", "FIPS_10_", "ADMIN", 
+    "ISO_N3")
+  listJoinCodesOld <- c("ISO2", "ISO3", "FIPS", "NAME", "UN")
+  listJoinCodes <- c(listJoinCodesOld, listJoinCodesNew)
+  if (joinCode %in% listJoinCodes == FALSE) {
+    stop("your joinCode (", joinCode, ") in joinCountryData2Map() is not one of those supported. Options are :", 
+      paste(listJoinCodes, ""), "\n")
+    return(FALSE)
+  }
+  joinCodeOld <- joinCode
+  if (joinCode %in% listJoinCodesOld) {
+    joinCode <- listJoinCodesNew[match(joinCode, listJoinCodesOld)]
+  }
+  if (is.na(match(nameJoinColumn, names(dF)))) {
+    stop("your chosen nameJoinColumn :'", nameJoinColumn, 
+      "' seems not to exist in your data, columns = ", 
+      paste(names(dF), ""))
+    return(FALSE)
+  }
+  dF[[joinCode]] <- as.character(dF[[nameJoinColumn]])
+  dF[[joinCode]] <- gsub("[[:space:]]*$", "", dF[[joinCode]])
+  if (joinCode == "ADMIN") {
+    dF$ISO3 <- NA
+    for (i in 1:nrow(dF)) dF$ISO3[i] = rwmGetISO3(dF[[joinCode]][i])
+    joinCode = "ISO3"
+    nameCountryColumn = nameJoinColumn
+  }
+  matchPosnsInLookup <- match(as.character(dF[[joinCode]]), 
+    as.character(mapWithData@data[[joinCode]]))
+  failedCodes <- dF[[joinCode]][is.na(matchPosnsInLookup)]
+  numFailedCodes <- length(failedCodes)
+  numMatchedCountries <- nrow(dF) - numFailedCodes
+  #cat(numMatchedCountries)
+  failedCountries <- dF[[nameCountryColumn]][is.na(matchPosnsInLookup)]
+  failedCountries <- cbind(failedCodes, failedCountries = as.character(failedCountries))
+ # cat(numFailedCodes)
+  if (verbose) 
+    print(failedCountries)
+  matchPosnsInUserData <- match(as.character(mapWithData@data[[joinCode]]), 
+    as.character(dF[[joinCode]]))
+  codesMissingFromUserData <- as.character(mapWithData@data[[joinCode]][is.na(matchPosnsInUserData)])
+  countriesMissingFromUserData <- as.character(mapWithData@data[["NAME"]][is.na(matchPosnsInUserData)])
+  numMissingCodes <- length(codesMissingFromUserData)
+  #cat(numMissingCodes)
+  mapWithData@data <- cbind(mapWithData@data, dF[matchPosnsInUserData, 
+    ])
+  invisible(mapWithData)
+}
+
+```
+
+
+
+```{r dat, message=F, eval=TRUE, echo=F}
+
+urlfile1="https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/vaccinations/vaccinations.csv"
+coronavirus1 <- readr::read_csv(url(urlfile1))
+countries_list <- c(levels(as.factor(coronavirus1$location)))
+coronavirus_withoutworld <- coronavirus1 %>% filter(!location=="World") 
+Winner_popu <- coronavirus_withoutworld %>% filter(total_vaccinations==max(total_vaccinations, na.rm = T))# & 
+Winner_popu <- Winner_popu[1,1]                                   
+ 
+Winner_Rate <- coronavirus_withoutworld %>% filter(total_vaccinations_per_hundred==max(total_vaccinations_per_hundred, na.rm = T))
+Winner_Rate <- Winner_Rate[1,1]
+```
+
+##
+
+
+##
+
+
+# **Daily summary of Covid-19 vaccinations** {.tabset}
+
+
+Up to **`r max(coronavirus1$date)`**, the country with highest population being vaccinated would be **`r Winner_popu`** while the fastest vaccination rate per hundred would be **`r Winner_Rate`**. The status is updated on a daily basis. The current time of pulling data is **`r Sys.time()`**
+
+## **Map**
+
+### Countries that initiated vaccination and number of shots given
+```{r  echo=F, message=FALSE, error=F}
+
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+world$location<- world$name 
+
+Both <- world %>% dplyr::left_join(coronavirus1, by="location") %>% 
+  dplyr::select(name, location, daily_vaccinations, geometry) %>% group_by(location) %>%
+  dplyr::summarise(total=sum(daily_vaccinations, na.rm = T), geometry=geometry[1]) %>% filter(total >0)
+
+  ALLE_ <- as.factor(coronavirus1$location)
+   ALLE_ = ALLE_[!ALLE_ %in% c("European Union", "World")]
+  
+ 
+
+selectInput(inputId = "country_wanted", 
+            label = "Country", 
+            choices = ALLE_, 
+            selected = ALLE_, multiple = T )
+
+dat_needed_map_gg <- reactive(
+  filter(Both, location %in% input$country_wanted)
+  
+)
+
+renderPlot({  
+  ggplot(data = dat_needed_map_gg()) +
+    geom_sf(aes(fill = total)) +
+    scale_fill_viridis_c(option = "plasma", trans = "sqrt")
+})
+ 
+
+```
+
+## **Latest status**
+
+**Total number of vaccination per 100 people in the total population**
+```{r echo=F, fig.height=15, fig.width=8}
+ylab <- c(0.01, 0.6,0.7, 0.8,0.9,1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,2, 2.4, 2.5, 5.0, 7.5, seq(10, 10000, by=2))
+
+vaccination_countries <- levels(as.factor(coronavirus1$location))
+
+inputPanel(
+selectInput(inputId = "Ctr__vaccin_latest", 
+                        label = "Country of interest",
+                        choices = vaccination_countries, 
+            selected = c("Israel","United Kingdom", "Germany", "France", "United Arab Emirates"), 
+            multiple = T   )
+)
+
+data_latest_gg <- reactive(
+  
+  
+  coronavirus1 %>% filter(location %in% c(input$Ctr__vaccin_latest)) %>% group_by(location)  %>%  filter(date==max(date)) %>% select(location, date,total_vaccinations, people_vaccinated_per_hundred, daily_vaccinations_per_million, total_vaccinations_per_hundred) %>% mutate(date=as.character(date))
+  
+)
+
+#renderPrint(data_latest_gg())
+renderPlot({
+ data_latest_gg()  %>% ggplot(aes(reorder(location, total_vaccinations), total_vaccinations, fill=location))+
+   geom_bar(stat = "identity")+theme(legend.position = "none")+
+ geom_text(aes( label = paste(total_vaccinations, date, sep=", updated on ")), 
+          angle=45, vjust = 0, hjust=0, size=4)+  
+    ylab("Total shots given")+ xlab("")+
+    theme(axis.text.x = element_text(size=15, angle = 90, face = "bold"))+  scale_y_continuous(labels = paste0(ylab, "M"), 
+                                                                                               breaks = 10^6 * ylab)
+
+})
+
+
+
+renderPlot({
+ data_latest_gg()  %>% ggplot(aes(reorder(location, total_vaccinations_per_hundred), total_vaccinations_per_hundred, fill=location))+
+   geom_bar(stat = "identity")+theme(legend.position = "none")+
+ geom_text(aes( label = paste(total_vaccinations_per_hundred, date, sep=", updated on ")), 
+          angle=45, vjust = 0, hjust=0, size=4)+  
+    ylab("Total vaccination per 100 people in the total population")+ xlab("")+
+    theme(axis.text.x = element_text(size=15, angle = 90, face = "bold"))
+
+})
+# table %>% filter(total_vaccinations_per_hundred>0.000000001) %>% mutate(loc_date= paste(location, date, sep=" ")) %>%  ggplot(aes(reorder(loc_date, total_vaccinations_per_hundred), total_vaccinations_per_hundred, fill=location))+
+#   geom_bar(stat = "identity")+coord_flip()+theme(legend.position = "none")+
+# geom_text(aes( label = paste(total_vaccinations_per_hundred, date, sep=", updated on ")),  vjust = 0, hjust=0, size=3)+  ylab("Total vaccination 100 people in the total population")+ xlab("")
+# 
+
+```
+
+## **Overall status since vaccination start**
+```{r, fig.width=40, echo=FALSE, fig.height=90, out.width="100%", out.height="100%", out.extra="100%"}
+# mutate(Breaks=ifelse(total_vaccinations_per_hundred>15, "S1", ifelse(total_vaccinations_per_hundred<15 & total_vaccinations_per_hundred>10, "S2", ifelse(total_vaccinations_per_hundred<=10 &total_vaccinations_per_hundred>5, "S3", ifelse(total_vaccinations_per_hundred <=5 & total_vaccinations_per_hundred>3, "S4", ifelse(total_vaccinations_per_hundred <=3 & total_vaccinations_per_hundred>1, "S5", ifelse(total_vaccinations_per_hundred <=1, "S6", "S7"))))))) %>% filter(!is.na(Breaks))
+
+inputPanel( dateRangeInput('dateRange',
+      label = 'Date range:',
+      start = max(coronavirus1$date, na.rm = T)-10, end = max(coronavirus1$date, na.rm = T)
+    ),
+
+ sliderInput("slider2", label = "Rate range:", min = 0, 
+        max = max(coronavirus1$total_vaccinations_per_hundred, na.rm = T), 
+        value = c(min(coronavirus1$total_vaccinations_per_hundred, na.rm = T),       max(coronavirus1$total_vaccinations_per_hundred, na.rm = T)))
+
+)
+
+
+
+ dat_date_range <- reactive({ filter(coronavirus1, date>=input$dateRange[1] & date<=input$dateRange[2]) %>% 
+                              
+                            filter(total_vaccinations_per_hundred>=input$slider2[1] & total_vaccinations_per_hundred <= input$slider2[2])
+                           } )
+
+  renderPlot(   {
+    dat_date_range() %>%  
+    
+ggplot(aes(date, total_vaccinations_per_hundred, color=location, label=location))+geom_point()+ geom_line()+
+   geom_dl(aes(label = location, size=0.5), method = list(dl.trans(x = x - 2.73, y=y+0.3), "last.points")) + theme_bw()+
+  # geom_dl(aes(label = location), method = list(dl.trans(x = x - .1), "first.points"))
+     theme(legend.position = "none")+ ylab("Total vaccination per hundred")+theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+
+})
+
+
+```
+
+## **Total Shots Given**
+
+Total of vaccination doses administered. This is counted as a single dose, and may not equal the total number of people vaccinated, depending on the specific dose regime (e.g. people receive multiple doses). If a person receives one dose of the vaccine, this metric goes up by 1. If they receive a second dose, it goes up by 1 again.
+
+```{r  fig.width=40, echo=FALSE, fig.height=90, out.width="100%", out.height="100%", out.extra="100%", echo=F}
+
+ylab <- c(0.01, 0.6,0.7, 0.8,0.9,1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,2, 2.4, 2.5, 5.0, 7.5, seq(10, 10000, by=2))
+
+
+selectInput(inputId = "Ctr", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = "Germany")
+
+
+ dat_Ctr <- reactive(
+   coronavirus1 %>%   filter(   (location %in% input$Ctr)  )
+ 
+)
+
+
+renderPlotly({
+dat_Ctr() %>% ggplot(aes(as.character(date), total_vaccinations, fill=location, group = 1))+
+  geom_point()+geom_line() + facet_wrap(~location, scales = "free")+ ylab("")+ ggtitle("Total population vaccinated")+
+    xlab("Date")+theme_bw() + theme(axis.text.x = element_text(angle = 90))+  scale_y_continuous(labels = paste0(ylab, "M"), breaks = 10^6 * ylab)
+
+
+})
+
+
+```
+
+
+## **Population Fully Vaccinated**
+
+Data regarding people fully vaccinated is available for some countries only. 
+Total number of people receiving the shots needed for the vaccine to be effective is shown. Some vaccines require 1 shot while other vaccines require 2 shots. 
+```{r  fig.width=40, echo=FALSE, fig.height=90, out.width="100%", out.height="100%", out.extra="100%", echo=F, warning=FALSE, message=FALSE}
+
+
+
+Both2 <- world %>% dplyr::left_join(coronavirus1, by="location") %>% 
+  dplyr::select(name, location, people_fully_vaccinated, geometry) %>% group_by(location) %>%
+  dplyr::summarise("Population Fully Vaccincated"=max(people_fully_vaccinated, na.rm = T), geometry=geometry[1]) %>% filter(`Population Fully Vaccincated` >0)
+
+
+
+
+
+  Both2_ALLE <- as.factor(Both2$location)
+   Both2_ALLE = Both2_ALLE[!Both2_ALLE %in% c("European Union", "World")]
+  
+
+
+selectInput(inputId = "country_wanted", 
+            label = "Country", 
+            choices = Both2_ALLE, 
+            selected = Both2_ALLE, multiple = T )
+
+
+renderPlot({  
+  ggplot(data = Both2) +
+    geom_sf(aes(fill = `Population Fully Vaccincated`)) +
+    scale_fill_viridis_c(option = "plasma")
+})
+
+
+ylab <- c(0.01,0.02,0.03, 0.04,0.05, 0.1,0.2, 0.3, 0.5,0.4,0.5, 0.6,0.7, 0.8,0.9,1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,2, 2.4, 2.5, 5.0, 7.5, seq(10, 10000, by=2))
+
+
+selectInput(inputId = "Ctr_fully", 
+                        label = "Country of interest",
+                        choices = Both2_ALLE, selected = "Germany", multiple = T)
+
+
+ dat_Ctr_full <- reactive(
+   coronavirus1 %>%   filter(   (location %in% input$Ctr_fully)  )
+ 
+)
+
+
+renderPlotly({
+dat_Ctr_full() %>% ggplot(aes(as.character(date), people_fully_vaccinated, fill=location, group = 1, shape=location))+
+  geom_point()+geom_line() + 
+   # facet_wrap(~location, scales = "free")+ 
+    ylab("")+ ggtitle("Total Population Fully Vaccinated")+
+    xlab("Date")+theme_bw() + theme(axis.text.x = element_text(angle = 90))+  scale_y_continuous(labels = paste0(ylab, "M"), breaks = 10^6 * ylab)
+
+
+})
+
+
+
+
+
+```
+
+## **Per Hundred People**
+Total vaccinations per 100 people in the total population of the country
+```{r echo=F}
+
+
+selectInput(inputId = "Ctrr", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = "Germany")
+
+ dat_Ctrr <- reactive(
+   coronavirus1 %>%   filter(   (location %in% input$Ctrr)  )
+ 
+)
+
+renderPlotly({
+dat_Ctrr() %>% ggplot(aes(as.character(date), total_vaccinations_per_hundred, fill=location, group = 1))+
+  geom_point()+geom_line() +  ylab("")+ 
+    xlab("Date") +  theme_bw()+theme(axis.text.x = element_text(angle = 90))#+  scale_y_continuous(labels = paste0(ylab, "M"), breaks = 10^6 * ylab)
+
+
+})
+
+```
+
+
+
+## **Per Million People**
+Daily vaccinations per 1,000,000 people in the total population of the country.
+```{r echo=F}
+
+
+selectInput(inputId = "Ctrrr", 
+                        label = "Country of interest",
+                        choices = countries_list, selected = "Germany")
+
+ dat_Ctrrr <- reactive(
+   coronavirus1 %>%   filter(   (location %in% input$Ctrrr)  )
+ 
+)
+
+renderPlotly({
+dat_Ctrrr() %>% ggplot(aes(as.character(date), daily_vaccinations_per_million, fill=location, group = 1))+
+  geom_point()+geom_line() +  ylab("")+ 
+    xlab("Date") +theme_bw()+ theme(axis.text.x = element_text(angle = 90)) #+  scale_y_continuous(labels = paste0(ylab, "M"), breaks = 10^6 * ylab)
+
+
+})
+
+```
+
+
+
+
+## **Latest Summary data**
+```{r echo=F}
+
+table_lat <- coronavirus1 %>% group_by(location) %>%  filter(date==max(date)) %>% select(location, date,total_vaccinations, people_vaccinated_per_hundred, daily_vaccinations_per_million) %>% arrange(desc(date))%>% mutate(date=as.character(date))
+
+renderTable(table_lat)
+
+```
+
+
+
+
+
